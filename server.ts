@@ -236,11 +236,19 @@ CRITICAL: DO NOT SKIP ANY SPEECH BUBBLE OR FLOATING TEXT. If a bubble contains t
         // Extract JSON if it is surrounded by plain text
         const jsonStartIndex = cleanedText.indexOf('{');
         const jsonEndIndex = cleanedText.lastIndexOf('}');
+        
         if (jsonStartIndex !== -1 && jsonEndIndex !== -1 && jsonEndIndex > jsonStartIndex) {
           cleanedText = cleanedText.substring(jsonStartIndex, jsonEndIndex + 1);
+        } else {
+          // If no JSON brackets were found, the model likely triggered a safety block and returned plain text.
+          throw new Error(`Model returned plain text instead of JSON (Possible safety block). Response: ${resultText}`);
         }
 
-        return JSON.parse(cleanedText);
+        try {
+          return JSON.parse(cleanedText);
+        } catch (parseErr) {
+          throw new Error(`Failed to parse extracted JSON. Response: ${resultText}`);
+        }
       } catch (err: any) {
         lastError = err;
         const errMsg = err?.message || String(err);
