@@ -34,6 +34,13 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', hasApiKey: !!apiKey });
 });
 
+// Startup key validation
+if (!apiKey) {
+  console.error('[STARTUP ERROR] GEMINI_API_KEY is not set. All translation requests will fail.');
+} else {
+  console.log(`[STARTUP] Gemini API key loaded (starts with: ${apiKey.substring(0, 8)}...)`);
+}
+
 // Translation API Endpoint
 app.post('/api/translate-page', async (req, res) => {
   try {
@@ -156,7 +163,7 @@ IMPORTANT: You MUST respond ONLY with valid JSON matching the requested schema. 
 CRITICAL: DO NOT SKIP ANY SPEECH BUBBLE OR FLOATING TEXT. If a bubble contains text, you MUST include it in the text_blocks array.`;
 
   const selectedModel = settings?.selectedModel?.trim();
-  const baseModels = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.0-flash'];
+  const baseModels = ['gemini-3.6-flash', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'];
   const modelsToTry = selectedModel && !baseModels.includes(selectedModel)
     ? [selectedModel, ...baseModels]
     : baseModels;
@@ -293,6 +300,7 @@ CRITICAL: DO NOT SKIP ANY SPEECH BUBBLE OR FLOATING TEXT. If a bubble contains t
         lastError = err;
         const errMsg = err?.message || String(err);
         console.warn(`[Gemini] Error with model ${modelName} attempt ${attempts + 1}: ${errMsg}`);
+        console.warn(`[Gemini] Full error object:`, JSON.stringify(err, null, 2));
 
         const isRetryable =
           errMsg.includes('429') ||

@@ -42,7 +42,7 @@ export default function App() {
     enableStroke: true,
     bgEraseStyle: 'smooth_fill',
     readingDirection: 'rtl',
-    selectedModel: 'gemini-2.5-flash',
+    selectedModel: 'gemini-3.6-flash',
     customApiKey: '',
   });
 
