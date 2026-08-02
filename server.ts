@@ -231,7 +231,15 @@ CRITICAL: DO NOT SKIP ANY SPEECH BUBBLE OR FLOATING TEXT. If a bubble contains t
         });
 
         const resultText = response.text || '{}';
-        const cleanedText = resultText.replace(/^```json\s*/i, '').replace(/\s*```$/i, '').trim();
+        let cleanedText = resultText.replace(/^```(json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+        
+        // Extract JSON if it is surrounded by plain text
+        const jsonStartIndex = cleanedText.indexOf('{');
+        const jsonEndIndex = cleanedText.lastIndexOf('}');
+        if (jsonStartIndex !== -1 && jsonEndIndex !== -1 && jsonEndIndex > jsonStartIndex) {
+          cleanedText = cleanedText.substring(jsonStartIndex, jsonEndIndex + 1);
+        }
+
         return JSON.parse(cleanedText);
       } catch (err: any) {
         lastError = err;
