@@ -230,24 +230,50 @@ CRITICAL: DO NOT SKIP ANY SPEECH BUBBLE OR FLOATING TEXT. If a bubble contains t
           },
         });
 
-        const resultText = response.text || '{}';
+        // Safely extract response text — the SDK can throw if a safety filter triggered
+        let resultText: string;
+        try {
+          // Check for safety blocks before accessing .text
+          const candidates = (response as any).candidates;
+          if (candidates && candidates.length > 0) {
+            const finishReason = candidates[0].finishReason;
+            if (finishReason === 'SAFETY' || finishReason === 'BLOCKED') {
+              throw new Error(`Content was blocked by Gemini safety filters (reason: ${finishReason}). Try a different image.`);
+            }
+          }
+          const promptFeedback = (response as any).promptFeedback;
+          if (promptFeedback?.blockReason) {
+            throw new Error(`Prompt was blocked by Gemini (reason: ${promptFeedback.blockReason}). Try a different image.`);
+          }
+          resultText = response.text ?? '';
+        } catch (textErr: any) {
+          // If .text itself throws (e.g. safety block), handle it gracefully
+          if (textErr.message?.includes('blocked') || textErr.message?.includes('SAFETY')) {
+            throw textErr; // Re-throw our own safety messages
+          }
+          throw new Error(`Failed to read Gemini response: ${textErr.message || String(textErr)}`);
+        }
+
+        if (!resultText || resultText.trim().length === 0) {
+          throw new Error('Gemini returned an empty response. The image may have been blocked or unprocessable.');
+        }
+
         let cleanedText = resultText.replace(/^```(json)?\s*/i, '').replace(/\s*```$/i, '').trim();
         
-        // Extract JSON if it is surrounded by plain text
+        // Extract JSON object from the response, even if surrounded by plain text
         const jsonStartIndex = cleanedText.indexOf('{');
         const jsonEndIndex = cleanedText.lastIndexOf('}');
         
         if (jsonStartIndex !== -1 && jsonEndIndex !== -1 && jsonEndIndex > jsonStartIndex) {
           cleanedText = cleanedText.substring(jsonStartIndex, jsonEndIndex + 1);
         } else {
-          // If no JSON brackets were found, the model likely triggered a safety block and returned plain text.
-          throw new Error(`Model returned plain text instead of JSON (Possible safety block). Response: ${resultText}`);
+          throw new Error(`Gemini returned non-JSON text: "${resultText.substring(0, 120)}...". The image may have triggered a content filter.`);
         }
 
         try {
           return JSON.parse(cleanedText);
         } catch (parseErr) {
-          throw new Error(`Failed to parse extracted JSON. Response: ${resultText}`);
+          throw new Error(`Failed to parse Gemini JSON response. Raw text: "${resultText.substring(0, 120)}..."`);
         }
       } catch (err: any) {
         lastError = err;

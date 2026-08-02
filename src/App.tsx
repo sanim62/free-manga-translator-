@@ -187,10 +187,16 @@ export default function App() {
           }),
         });
 
-        const data = await response.json();
+        let data: any;
+        try {
+          data = await response.json();
+        } catch {
+          const rawText = await response.text().catch(() => 'Unknown server error');
+          throw new Error(rawText || `Server returned status ${response.status}`);
+        }
 
         if (!response.ok || data.error) {
-          throw new Error(data.error || 'Server error during translation');
+          throw new Error(data?.error || 'Server error during translation');
         }
 
         const textBlocks = data.textBlocks || [];
