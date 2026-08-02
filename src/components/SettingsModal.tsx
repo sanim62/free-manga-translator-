@@ -59,8 +59,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               className="w-full bg-black/50 border border-white/10 rounded-lg p-2 text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
             >
               <option value="gemini-3.6-flash">gemini-3.6-flash (Recommended - High Accuracy)</option>
+              <option value="gemini-3.5-flash">gemini-3.5-flash (Balanced Speed & Accuracy)</option>
               <option value="gemini-3.1-flash-lite">gemini-3.1-flash-lite (Fast & High Quota)</option>
-              <option value="gemini-flash-latest">gemini-flash-latest (Auto Fallback)</option>
             </select>
             <p className="text-[11px] text-slate-400 mt-1">
               Automatic fallbacks will engage if a rate limit or quota limit is encountered.

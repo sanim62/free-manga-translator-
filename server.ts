@@ -48,16 +48,15 @@ app.post('/api/translate-page', async (req, res) => {
 
     if (!effectiveApiKey) {
       return res.status(500).json({
-        error: 'Gemini API key is not configured. Please check your secrets configuration.',
+        error: 'Gemini API key is not configured. Please set GEMINI_API_KEY in your .env file or enter a custom API key in Settings.',
       });
     }
 
-    const aiInstance = customKey
-      ? new GoogleGenAI({
-          apiKey: customKey,
-          httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
-        })
-      : ai;
+    // Always create a fresh AI instance with the effective key to avoid null reference crashes
+    const aiInstance = new GoogleGenAI({
+      apiKey: effectiveApiKey,
+      httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
+    });
 
     // Extract raw base64 data and normalize mime type for Gemini API compatibility
     let mimeType = 'image/jpeg';
@@ -78,7 +77,6 @@ app.post('/api/translate-page', async (req, res) => {
       } else if (rawMime.includes('heif')) {
         mimeType = 'image/heif';
       } else {
-        // Normalizes image/jpeg, image/jpg, image/jepg, image/bmp, image/avif, image/tiff, etc.
         mimeType = 'image/jpeg';
       }
     }
@@ -114,7 +112,7 @@ app.post('/api/translate-page', async (req, res) => {
 
 /**
  * Helper function to call Gemini with model fallbacks and exponential backoff retry.
- * Handles rate limits (429), quota exhaustion, and temporary network glitches.
+ * Handles rate limits (429), quota exhaustion, safety blocks, and temporary network glitches.
  */
 async function callGeminiTranslation(
   aiInstance: GoogleGenAI,
@@ -154,10 +152,11 @@ DETECTION GUIDELINES:
    - ${honorificsDirective}
    - ${sfxDirective}
 
+IMPORTANT: You MUST respond ONLY with valid JSON matching the requested schema. Do NOT include any explanation text before or after the JSON.
 CRITICAL: DO NOT SKIP ANY SPEECH BUBBLE OR FLOATING TEXT. If a bubble contains text, you MUST include it in the text_blocks array.`;
 
   const selectedModel = settings?.selectedModel?.trim();
-  const baseModels = ['gemini-3.6-flash', 'gemini-3.1-flash-lite', 'gemini-flash-latest'];
+  const baseModels = ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.1-flash-lite'];
   const modelsToTry = selectedModel && !baseModels.includes(selectedModel)
     ? [selectedModel, ...baseModels]
     : baseModels;
@@ -169,6 +168,8 @@ CRITICAL: DO NOT SKIP ANY SPEECH BUBBLE OR FLOATING TEXT. If a bubble contains t
 
     while (attempts < maxAttempts) {
       try {
+        console.log(`[Gemini] Attempting model: ${modelName}, attempt: ${attempts + 1}/${maxAttempts}`);
+
         const response = await aiInstance.models.generateContent({
           model: modelName,
           contents: {
@@ -180,7 +181,7 @@ CRITICAL: DO NOT SKIP ANY SPEECH BUBBLE OR FLOATING TEXT. If a bubble contains t
                 },
               },
               {
-                text: `Analyze this manga page (${filename || 'page.jpg'}) thoroughly. Extract ALL Japanese speech bubbles, thought bubbles, floating side commentary, narration boxes, and sound effects with bounding boxes and natural, idiomatic English translations.`,
+                text: `Analyze this manga page (${filename || 'page.jpg'}) thoroughly. Extract ALL Japanese speech bubbles, thought bubbles, floating side commentary, narration boxes, and sound effects with bounding boxes and natural, idiomatic English translations. Respond ONLY with valid JSON.`,
               },
             ],
           },
@@ -230,78 +231,93 @@ CRITICAL: DO NOT SKIP ANY SPEECH BUBBLE OR FLOATING TEXT. If a bubble contains t
           },
         });
 
-        // Safely extract response text — the SDK can throw if a safety filter triggered
-        let resultText: string;
+        // --- Safely extract the response text ---
+        // Step 1: Check for safety blocks on the response object
         try {
-          // Check for safety blocks before accessing .text
           const candidates = (response as any).candidates;
           if (candidates && candidates.length > 0) {
             const finishReason = candidates[0].finishReason;
-            if (finishReason === 'SAFETY' || finishReason === 'BLOCKED') {
-              throw new Error(`Content was blocked by Gemini safety filters (reason: ${finishReason}). Try a different image.`);
+            if (finishReason === 'SAFETY' || finishReason === 'BLOCKED' || finishReason === 'OTHER') {
+              const safetyRatings = candidates[0].safetyRatings
+                ? JSON.stringify(candidates[0].safetyRatings)
+                : 'unknown';
+              console.warn(`[Gemini] Response blocked. Reason: ${finishReason}, Ratings: ${safetyRatings}`);
+              throw new Error(`Image was blocked by Gemini safety filters (reason: ${finishReason}). Try a different image or model.`);
             }
           }
           const promptFeedback = (response as any).promptFeedback;
           if (promptFeedback?.blockReason) {
+            console.warn(`[Gemini] Prompt blocked. Reason: ${promptFeedback.blockReason}`);
             throw new Error(`Prompt was blocked by Gemini (reason: ${promptFeedback.blockReason}). Try a different image.`);
           }
+        } catch (safetyErr: any) {
+          if (safetyErr.message?.includes('blocked') || safetyErr.message?.includes('SAFETY') || safetyErr.message?.includes('safety')) {
+            throw safetyErr;
+          }
+          // If safety check itself errors, log and continue to try reading text
+          console.warn('[Gemini] Safety check encountered non-critical error:', safetyErr.message);
+        }
+
+        // Step 2: Safely read .text (can throw in some SDK versions)
+        let resultText = '';
+        try {
           resultText = response.text ?? '';
         } catch (textErr: any) {
-          // If .text itself throws (e.g. safety block), handle it gracefully
-          if (textErr.message?.includes('blocked') || textErr.message?.includes('SAFETY')) {
-            throw textErr; // Re-throw our own safety messages
-          }
-          throw new Error(`Failed to read Gemini response: ${textErr.message || String(textErr)}`);
+          console.error('[Gemini] response.text threw:', textErr.message);
+          throw new Error(`Gemini response could not be read: ${textErr.message}`);
         }
 
         if (!resultText || resultText.trim().length === 0) {
-          throw new Error('Gemini returned an empty response. The image may have been blocked or unprocessable.');
+          throw new Error('Gemini returned an empty response. The image may have been blocked or is unprocessable.');
         }
 
+        console.log(`[Gemini] Raw response length: ${resultText.length} chars, first 100: ${resultText.substring(0, 100)}`);
+
+        // Step 3: Extract and parse JSON
         let cleanedText = resultText.replace(/^```(json)?\s*/i, '').replace(/\s*```$/i, '').trim();
-        
-        // Extract JSON object from the response, even if surrounded by plain text
+
         const jsonStartIndex = cleanedText.indexOf('{');
         const jsonEndIndex = cleanedText.lastIndexOf('}');
-        
+
         if (jsonStartIndex !== -1 && jsonEndIndex !== -1 && jsonEndIndex > jsonStartIndex) {
           cleanedText = cleanedText.substring(jsonStartIndex, jsonEndIndex + 1);
         } else {
-          throw new Error(`Gemini returned non-JSON text: "${resultText.substring(0, 120)}...". The image may have triggered a content filter.`);
+          throw new Error(`Gemini did not return valid JSON. Response: "${resultText.substring(0, 200)}". The image may have triggered a content filter.`);
         }
 
-        try {
-          return JSON.parse(cleanedText);
-        } catch (parseErr) {
-          throw new Error(`Failed to parse Gemini JSON response. Raw text: "${resultText.substring(0, 120)}..."`);
-        }
+        const parsed = JSON.parse(cleanedText);
+        console.log(`[Gemini] Successfully parsed JSON with ${parsed.text_blocks?.length || 0} text blocks.`);
+        return parsed;
+
       } catch (err: any) {
         lastError = err;
         const errMsg = err?.message || String(err);
-        const isRateLimitOrQuota =
+        console.warn(`[Gemini] Error with model ${modelName} attempt ${attempts + 1}: ${errMsg}`);
+
+        const isRetryable =
           errMsg.includes('429') ||
           errMsg.includes('RESOURCE_EXHAUSTED') ||
           errMsg.includes('503') ||
           errMsg.includes('UNAVAILABLE') ||
           errMsg.includes('quota') ||
-          errMsg.includes('Overloaded');
+          errMsg.includes('Overloaded') ||
+          errMsg.includes('INTERNAL') ||
+          errMsg.includes('empty response');
 
-        if (isRateLimitOrQuota && attempts < maxAttempts - 1) {
+        if (isRetryable && attempts < maxAttempts - 1) {
           attempts++;
-          const delayMs = attempts * 1500;
-          console.warn(
-            `[Gemini API] Quota/Rate limit encountered. Retrying attempt ${attempts} for ${modelName} in ${delayMs}ms...`
-          );
+          const delayMs = attempts * 2000;
+          console.warn(`[Gemini] Retrying in ${delayMs}ms...`);
           await new Promise((res) => setTimeout(res, delayMs));
         } else {
-          console.warn(`[Gemini API] Model ${modelName} failed, trying fallback model if available...`);
-          break; // Move to next model
+          console.warn(`[Gemini] Model ${modelName} exhausted. Moving to next fallback.`);
+          break;
         }
       }
     }
   }
 
-  throw lastError || new Error('Failed to process manga page translation after multiple retries.');
+  throw lastError || new Error('Failed to translate manga page after trying all available models.');
 }
 
 // Vite Integration for dev vs static build in production
