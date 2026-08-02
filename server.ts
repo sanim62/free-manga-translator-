@@ -156,7 +156,7 @@ IMPORTANT: You MUST respond ONLY with valid JSON matching the requested schema. 
 CRITICAL: DO NOT SKIP ANY SPEECH BUBBLE OR FLOATING TEXT. If a bubble contains text, you MUST include it in the text_blocks array.`;
 
   const selectedModel = settings?.selectedModel?.trim();
-  const baseModels = ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.1-flash-lite'];
+  const baseModels = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.0-flash'];
   const modelsToTry = selectedModel && !baseModels.includes(selectedModel)
     ? [selectedModel, ...baseModels]
     : baseModels;
