@@ -187,11 +187,11 @@ export default function App() {
           }),
         });
 
+        const rawText = await response.text();
         let data: any;
         try {
-          data = await response.json();
+          data = JSON.parse(rawText);
         } catch {
-          const rawText = await response.text().catch(() => 'Unknown server error');
           throw new Error(rawText || `Server returned status ${response.status}`);
         }
 
