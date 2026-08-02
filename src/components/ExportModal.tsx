@@ -1,0 +1,212 @@
+import React, { useState } from 'react';
+import JSZip from 'jszip';
+import { MangaPage, MasterIndexData, TranslationSettings } from '../types';
+import {
+  X,
+  Download,
+  FileJson,
+  FolderArchive,
+  CheckCircle2,
+  Columns,
+  Image as ImageIcon,
+  Loader2,
+  Sparkles
+} from 'lucide-react';
+
+interface ExportModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  pages: MangaPage[];
+  settings: TranslationSettings;
+}
+
+export const ExportModal: React.FC<ExportModalProps> = ({
+  isOpen,
+  onClose,
+  pages,
+  settings,
+}) => {
+  const [isZipping, setIsZipping] = useState<boolean>(false);
+  const [zipProgress, setZipProgress] = useState<string>('');
+
+  if (!isOpen) return null;
+
+  const translatedCount = pages.filter((p) => p.status === 'done').length;
+
+  // Generate master_index.json structure
+  const masterIndexData: MasterIndexData = {
+    title: 'Manga Chapter Translation',
+    total_pages: pages.length,
+    translated_count: translatedCount,
+    created_at: new Date().toISOString(),
+    settings: settings,
+    pages: pages.map((p, idx) => ({
+      page_number: idx + 1,
+      filename: p.filename,
+      original_file: `original_${p.filename}`,
+      translated_file: `translated_${p.filename}`,
+      side_by_side_file: `side_by_side_${p.filename}`,
+      text_data_file: `text_only_${p.filename.replace(/\.[^/.]+$/, '')}.json`,
+      text_count: p.textBlocks.length,
+      summary: p.pageSummary,
+    })),
+  };
+
+  // Export full ZIP package
+  const handleExportFullZip = async () => {
+    setIsZipping(true);
+    setZipProgress('Creating output folder structure...');
+
+    try {
+      const zip = new JSZip();
+      const outputFolder = zip.folder('translated_output');
+      if (!outputFolder) throw new Error('Failed to create folder');
+
+      const translatedFolder = outputFolder.folder('translated_images');
+      const sideBySideFolder = outputFolder.folder('side_by_side');
+      const textOnlyFolder = outputFolder.folder('text_only');
+
+      // Add master_index.json
+      outputFolder.file('master_index.json', JSON.stringify(masterIndexData, null, 2));
+
+      // Process each page
+      for (let i = 0; i < pages.length; i++) {
+        const page = pages[i];
+        setZipProgress(`Packing Page ${i + 1} / ${pages.length}...`);
+
+        // Add text_only JSON
+        const textOnlyData = {
+          page_number: i + 1,
+          filename: page.filename,
+          summary: page.pageSummary,
+          text_blocks: page.textBlocks,
+        };
+        textOnlyFolder?.file(
+          `text_only_${page.filename.replace(/\.[^/.]+$/, '')}.json`,
+          JSON.stringify(textOnlyData, null, 2)
+        );
+
+        // Add Translated Image
+        if (page.translatedImageUrl) {
+          const transBase64 = page.translatedImageUrl.split(',')[1];
+          if (transBase64) {
+            translatedFolder?.file(`translated_${page.filename}`, transBase64, { base64: true });
+          }
+        }
+
+        // Add Side-by-Side Image
+        if (page.sideBySideImageUrl) {
+          const sideBase64 = page.sideBySideImageUrl.split(',')[1];
+          if (sideBase64) {
+            sideBySideFolder?.file(`side_by_side_${page.filename}`, sideBase64, { base64: true });
+          }
+        }
+      }
+
+      setZipProgress('Compressing ZIP archive...');
+      const content = await zip.generateAsync({ type: 'blob' });
+
+      // Trigger download
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(content);
+      a.download = `translated_manga_chapter.zip`;
+      a.click();
+    } catch (err: any) {
+      console.error('Failed to create ZIP package:', err);
+      alert('Failed to package ZIP: ' + err.message);
+    } finally {
+      setIsZipping(false);
+      setZipProgress('');
+    }
+  };
+
+  // Export Master Index JSON individually
+  const handleExportMasterIndexJson = () => {
+    const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(masterIndexData, null, 2));
+    const a = document.createElement('a');
+    a.href = dataStr;
+    a.download = 'master_index.json';
+    a.click();
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+      <div className="bg-[#141417] border border-white/5 rounded-xl max-w-xl w-full p-6 shadow-2xl relative space-y-6">
+        
+        {/* Modal Header */}
+        <div className="flex items-center justify-between border-b border-white/5 pb-4">
+          <div className="flex items-center space-x-3">
+            <div className="p-2.5 rounded-lg bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+              <FolderArchive className="w-6 h-6" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-white uppercase tracking-wide">Export Translated Chapter</h3>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Download structured output package with images, side-by-side, & JSON data
+              </p>
+            </div>
+          </div>
+
+          <button
+            onClick={onClose}
+            className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-all border border-transparent hover:border-white/10"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Directory Output Structure Preview */}
+        <div className="bg-black/50 border border-white/10 rounded-lg p-4 font-mono text-xs text-slate-300 space-y-2">
+          <div className="text-indigo-400 font-bold flex items-center space-x-1.5">
+            <FolderArchive className="w-4 h-4" />
+            <span>translated_output/</span>
+          </div>
+          <div className="pl-4 space-y-1.5 text-slate-400">
+            <div className="flex items-center space-x-2 text-emerald-400">
+              <ImageIcon className="w-3.5 h-3.5" />
+              <span>├── translated_images/ ({pages.length} Typeset Pages)</span>
+            </div>
+            <div className="flex items-center space-x-2 text-indigo-300">
+              <FileJson className="w-3.5 h-3.5" />
+              <span>├── text_only/ (JSON Speech Data)</span>
+            </div>
+            <div className="flex items-center space-x-2 text-purple-400 font-semibold">
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>└── master_index.json (Complete Sequence Index)</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div className="space-y-3 pt-2">
+          <button
+            onClick={handleExportFullZip}
+            disabled={isZipping || pages.length === 0}
+            className="w-full py-3 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs uppercase tracking-wider shadow-xl shadow-indigo-950/50 transition-all flex items-center justify-center space-x-2 disabled:opacity-50 border border-indigo-400/30"
+          >
+            {isZipping ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>{zipProgress || 'Preparing ZIP Archive...'}</span>
+              </>
+            ) : (
+              <>
+                <Download className="w-4 h-4" />
+                <span>Download Full Chapter Output Package (.ZIP)</span>
+              </>
+            )}
+          </button>
+
+          <button
+            onClick={handleExportMasterIndexJson}
+            className="w-full py-2.5 rounded-lg bg-black/40 hover:bg-white/10 text-slate-200 font-semibold text-xs border border-white/10 transition-all flex items-center justify-center space-x-2"
+          >
+            <FileJson className="w-4 h-4 text-purple-400" />
+            <span>Export Master Index JSON Only (master_index.json)</span>
+          </button>
+        </div>
+
+      </div>
+    </div>
+  );
+};

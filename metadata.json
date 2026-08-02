@@ -1,0 +1,6 @@
+{
+  "name": "Manga Translator",
+  "description": "Japanese-to-English manga translator featuring batch processing, speech bubble OCR & typesetting, side-by-side comparison, and interactive manga reader.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
