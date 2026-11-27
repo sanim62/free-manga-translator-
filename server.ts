@@ -8,10 +8,30 @@ import { runLocalPipeline } from './src/lib/localPipeline';
 
 const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
+const allowedOrigins = new Set(
+  (process.env.ALLOWED_ORIGINS || '').split(',').map((origin) => origin.trim()).filter(Boolean)
+);
 
 // High limit for base64 manga page uploads
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
+
+// Allow a separately hosted static frontend (for example Netlify) to call this
+// OCR server. Leave the list empty for same-origin deployments.
+app.use('/api', (req, res, next) => {
+  const origin = req.get('Origin');
+  if (origin && allowedOrigins.has(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Vary', 'Origin');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    res.setHeader('Access-Control-Max-Age', '86400');
+  }
+  if (req.method === 'OPTIONS') {
+    return origin && allowedOrigins.has(origin) ? res.sendStatus(204) : res.sendStatus(403);
+  }
+  next();
+});
 
 console.log('[STARTUP] Manga Translator — Local OCR mode (no API key required).');
 console.log('[STARTUP] Make sure Python dependencies are installed: pip install -r requirements.txt');

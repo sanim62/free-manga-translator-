@@ -22,6 +22,15 @@ Open `http://localhost:3000`. On Linux, activate/use `.venv/bin/python` in place
 
 Static-only hosting and short-lived Node serverless functions are not supported by this worker design. Chinese-to-English OCR/dictionary support is not currently connected; the active OCR model and bundled dictionary are for Japanese.
 
+### Netlify frontend with a separate OCR server
+
+Netlify can host the Vite frontend, but it does not run this persistent Python OCR worker. Deploy the full app/backend to Render or another host that supports a long-running Node process and Python, then set these environment variables:
+
+- On the OCR server: `ALLOWED_ORIGINS` = the exact Netlify site origin, such as `https://your-site.netlify.app` (comma-separated if you use multiple origins).
+- In Netlify: `VITE_API_BASE_URL` = the OCR server origin, such as `https://your-ocr-service.onrender.com` (no trailing slash).
+
+Redeploy the Netlify site after setting `VITE_API_BASE_URL`, because Vite embeds it at build time. The included `netlify.toml` publishes `dist/`.
+
 ## Features
 
 - Speech bubble and text region detection with light and dark bubble handling

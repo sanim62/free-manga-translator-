@@ -9,6 +9,7 @@ import { sortMangaFiles } from './utils/naturalSort';
 import { generateSampleMangaPages } from './utils/sampleData';
 import { renderTranslatedPage, renderSideBySidePage } from './utils/mangaRenderer';
 import { isFullyTranslatedBlock } from './utils/translationStatus';
+import { apiUrl } from './lib/apiUrl';
 
 import { Navbar } from './components/Navbar';
 import { UploadZone } from './components/UploadZone';
@@ -194,7 +195,7 @@ export default function App() {
         updatedPages[i] = { ...updatedPages[i], progress: 10 };
         setPages([...updatedPages]);
         addLog('  → Sending page to the server-side MangaOCR engine…');
-        const response = await fetch('/api/translate-page', {
+        const response = await fetch(apiUrl('/api/translate-page'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ imageBase64: optimizedImageBase64 }),
@@ -204,6 +205,11 @@ export default function App() {
         try {
           result = JSON.parse(responseText);
         } catch {
+          if (/^\s*<!doctype html|^\s*<html/i.test(responseText)) {
+            throw new Error(
+              `OCR API returned an HTML page (HTTP ${response.status}). Configure VITE_API_BASE_URL to point at the OCR server; the Netlify site only hosts the frontend.`
+            );
+          }
           throw new Error(responseText || `OCR server returned status ${response.status}`);
         }
         if (!response.ok || result.error) {
