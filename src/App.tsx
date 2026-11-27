@@ -8,6 +8,7 @@ import { MangaPage, TranslationSettings } from './types';
 import { sortMangaFiles } from './utils/naturalSort';
 import { generateSampleMangaPages } from './utils/sampleData';
 import { renderTranslatedPage, renderSideBySidePage } from './utils/mangaRenderer';
+import { isFullyTranslatedBlock } from './utils/translationStatus';
 
 import { Navbar } from './components/Navbar';
 import { UploadZone } from './components/UploadZone';
@@ -42,8 +43,6 @@ export default function App() {
     enableStroke: true,
     bgEraseStyle: 'smooth_fill',
     readingDirection: 'rtl',
-    selectedModel: 'gemini-2.5-flash',
-    customApiKey: '',
   });
 
   const addLog = (msg: string) => {
@@ -52,12 +51,25 @@ export default function App() {
 
   // Handle uploaded files with natural sequence sorting
   const handleFilesSelected = async (files: FileList | File[]) => {
-    const fileArray = Array.from(files);
+    const selectedFiles = Array.from(files);
+    const fileArray = selectedFiles.filter((file) =>
+      /\.(jpe?g|png|webp|gif|bmp|avif)$/i.test(file.name) &&
+      (!file.type || file.type.startsWith('image/'))
+    );
+    if (fileArray.length < selectedFiles.length) {
+      addLog(`Skipped ${selectedFiles.length - fileArray.length} unsupported file(s). Select JPG, PNG, WEBP, GIF, BMP, or AVIF images.`);
+    }
     const newPages: MangaPage[] = [];
 
     for (let i = 0; i < fileArray.length; i++) {
       const file = fileArray[i];
-      const dataUrl = await readFileAsDataURL(file);
+      let dataUrl: string;
+      try {
+        dataUrl = await readFileAsDataURL(file);
+      } catch {
+        addLog(`Could not read ${file.name}; skipped that image.`);
+        continue;
+      }
 
       newPages.push({
         id: `page_${Date.now()}_${i}_${Math.random().toString(36).substr(2, 4)}`,
@@ -105,10 +117,12 @@ export default function App() {
     const processedSamples = await Promise.all(
       samplePages.map(async (p) => {
         const transUrl = await renderTranslatedPage(p.originalUrl, p.textBlocks, settings);
+        const sideBySideUrl = await renderSideBySidePage(p.originalUrl, transUrl, p.sequenceIndex, p.filename);
         return {
           ...p,
           status: 'done' as const,
           translatedImageUrl: transUrl,
+          sideBySideImageUrl: sideBySideUrl,
           pageSummary: 'Sample Japanese Manga Page',
         };
       })
@@ -161,7 +175,7 @@ export default function App() {
     if (pages.length === 0 || isProcessing) return;
 
     setIsProcessing(true);
-    addLog('Starting batch translation engine...');
+    addLog('Starting local OCR engine…');
 
     const updatedPages = [...pages];
 
@@ -170,43 +184,45 @@ export default function App() {
       if (currentPage.status === 'done') continue; // Skip already translated pages
 
       // Update status to processing
-      updatedPages[i] = { ...currentPage, status: 'processing', progress: 10 };
+      updatedPages[i] = { ...currentPage, status: 'processing', progress: 5 };
       setPages([...updatedPages]);
-      addLog(`[${i + 1}/${pages.length}] Processing ${currentPage.filename}...`);
+      addLog(`[${i + 1}/${pages.length}] Processing ${currentPage.filename}…`);
 
       try {
         const optimizedImageBase64 = await optimizeImageForTranslation(currentPage.originalUrl);
 
+        updatedPages[i] = { ...updatedPages[i], progress: 10 };
+        setPages([...updatedPages]);
+        addLog('  → Sending page to the server-side MangaOCR engine…');
         const response = await fetch('/api/translate-page', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            imageBase64: optimizedImageBase64,
-            filename: currentPage.filename,
-            settings: settings,
-          }),
+          body: JSON.stringify({ imageBase64: optimizedImageBase64 }),
         });
-
-        const rawText = await response.text();
-        let data: any;
+        const responseText = await response.text();
+        let result: { textBlocks?: MangaPage['textBlocks']; pageSummary?: string; error?: string };
         try {
-          data = JSON.parse(rawText);
+          result = JSON.parse(responseText);
         } catch {
-          throw new Error(rawText || `Server returned status ${response.status}`);
+          throw new Error(responseText || `OCR server returned status ${response.status}`);
         }
-
-        if (!response.ok || data.error) {
-          throw new Error(data?.error || 'Server error during translation');
+        if (!response.ok || result.error) {
+          throw new Error(result.error || 'Server-side manga OCR failed');
         }
-
-        const textBlocks = data.textBlocks || [];
-        const pageSummary = data.pageSummary || '';
+        const textBlocks = result.textBlocks || [];
+        const pageSummary = result.pageSummary || `[MangaOCR — ${textBlocks.length} bubble(s) detected]`;
 
         // Render typeset translated page
         const translatedDataUrl = await renderTranslatedPage(
           currentPage.originalUrl,
           textBlocks,
           settings
+        );
+        const sideBySideDataUrl = await renderSideBySidePage(
+          currentPage.originalUrl,
+          translatedDataUrl,
+          i + 1,
+          currentPage.filename
         );
 
         updatedPages[i] = {
@@ -216,13 +232,12 @@ export default function App() {
           textBlocks: textBlocks,
           pageSummary: pageSummary,
           translatedImageUrl: translatedDataUrl,
+          sideBySideImageUrl: sideBySideDataUrl,
         };
 
         setPages([...updatedPages]);
-        addLog(`[${i + 1}/${pages.length}] Completed ${currentPage.filename} (${textBlocks.length} bubbles translated).`);
+        addLog(`[${i + 1}/${pages.length}] ✓ ${currentPage.filename} — ${textBlocks.length} bubble(s) translated.`);
 
-        // Delay between batch items to protect API rate limits
-        await new Promise((res) => setTimeout(res, 800));
       } catch (err: any) {
         console.error(`Error on page ${currentPage.filename}:`, err);
         updatedPages[i] = {
@@ -231,12 +246,12 @@ export default function App() {
           errorMessage: err.message,
         };
         setPages([...updatedPages]);
-        addLog(`[${i + 1}/${pages.length}] Error on ${currentPage.filename}: ${err.message}`);
+        addLog(`[${i + 1}/${pages.length}] ✗ Error on ${currentPage.filename}: ${err.message}`);
       }
     }
 
     setIsProcessing(false);
-    addLog('Batch Translation Process Complete!');
+    addLog('✅ All pages processed!');
   };
 
   // Retry individual page
@@ -254,7 +269,9 @@ export default function App() {
     setPages(newPages);
   };
 
-  const translatedCount = pages.filter((p) => p.status === 'done').length;
+  const translatedCount = pages.filter((page) =>
+    page.status === 'done' && page.textBlocks.length > 0 && page.textBlocks.every(isFullyTranslatedBlock)
+  ).length;
 
   return (
     <div className="min-h-screen bg-[#0A0A0B] text-slate-100 font-sans selection:bg-indigo-600 selection:text-white pb-12">

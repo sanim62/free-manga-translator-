@@ -1,6 +1,6 @@
 import React from 'react';
 import { TranslationSettings, FontFamily } from '../types';
-import { X, Settings, Sliders, Check, Sparkles } from 'lucide-react';
+import { X, Settings, Sliders, Cpu } from 'lucide-react';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -17,22 +17,24 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 }) => {
   if (!isOpen) return null;
 
+  const update = (patch: Partial<TranslationSettings>) =>
+    onUpdateSettings({ ...settings, ...patch });
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
       <div className="bg-[#141417] border border-white/5 rounded-xl max-w-lg w-full p-6 shadow-2xl relative space-y-6 max-h-[90vh] overflow-y-auto custom-scrollbar">
-        
-        {/* Header */}
+
+        {/* ── Header ── */}
         <div className="flex items-center justify-between border-b border-white/5 pb-4">
           <div className="flex items-center space-x-3">
             <div className="p-2.5 rounded-lg bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
               <Settings className="w-6 h-6" />
             </div>
             <div>
-              <h3 className="text-sm font-bold text-white uppercase tracking-wide">Translation & Typesetting Settings</h3>
-              <p className="text-xs text-slate-400 mt-0.5">Configure Japanese translation nuances & font overlay style</p>
+              <h3 className="text-sm font-bold text-white uppercase tracking-wide">Translation &amp; Typesetting Settings</h3>
+              <p className="text-xs text-slate-400 mt-0.5">Configure translation nuances &amp; font overlay style</p>
             </div>
           </div>
-
           <button
             onClick={onClose}
             className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-all border border-transparent hover:border-white/10"
@@ -41,55 +43,23 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           </button>
         </div>
 
-        {/* Translation Nuance Settings */}
+        {/* ── Local Engine Badge ── */}
+        <div className="flex items-center space-x-3 bg-emerald-500/5 border border-emerald-500/20 rounded-lg p-3">
+          <Cpu className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+          <div>
+            <p className="text-xs font-semibold text-emerald-300">Local OCR Engine — No API Key Required</p>
+            <p className="text-[11px] text-slate-400 mt-0.5">
+              Speech bubbles are detected with OpenCV and OCR'd with manga-ocr, fully offline.
+              Dictionary lookup provides word-level English translations.
+            </p>
+          </div>
+        </div>
+
+        {/* ── Translation Nuance Settings ── */}
         <div className="space-y-4">
           <h4 className="text-xs font-bold text-indigo-400 uppercase tracking-wider flex items-center space-x-1.5">
-            <Sparkles className="w-3.5 h-3.5" />
-            <span>AI Model & Quota Management</span>
-          </h4>
-
-          {/* Model Selection */}
-          <div className="space-y-1.5 bg-black/50 p-3 rounded-lg border border-white/10">
-            <label className="text-xs font-semibold text-slate-200">Gemini Model</label>
-            <select
-              value={settings.selectedModel || 'gemini-2.5-flash'}
-              onChange={(e) =>
-                onUpdateSettings({ ...settings, selectedModel: e.target.value })
-              }
-              className="w-full bg-black/50 border border-white/10 rounded-lg p-2 text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
-            >
-              <option value="gemini-2.5-flash">gemini-2.5-flash (Recommended - High Accuracy)</option>
-              <option value="gemini-2.0-flash">gemini-2.0-flash (Balanced Speed & Accuracy)</option>
-              <option value="gemini-2.0-flash-lite">gemini-2.0-flash-lite (Fast & High Quota)</option>
-            </select>
-            <p className="text-[11px] text-slate-400 mt-1">
-              Automatic fallbacks will engage if a rate limit or quota limit is encountered.
-            </p>
-          </div>
-
-          {/* Custom API Key Input (Optional) */}
-          <div className="space-y-1.5 bg-black/50 p-3 rounded-lg border border-white/10">
-            <label className="text-xs font-semibold text-slate-200 flex items-center justify-between">
-              <span>Custom Gemini API Key (Optional)</span>
-              <span className="text-[10px] text-indigo-400 font-mono">Bypasses Default Quotas</span>
-            </label>
-            <input
-              type="password"
-              placeholder="AIzaSy... (Leave empty to use built-in system key)"
-              value={settings.customApiKey || ''}
-              onChange={(e) =>
-                onUpdateSettings({ ...settings, customApiKey: e.target.value })
-              }
-              className="w-full bg-black/50 border border-white/10 rounded-lg p-2 text-xs text-slate-200 focus:outline-none focus:border-indigo-500 font-mono placeholder:text-slate-600"
-            />
-            <p className="text-[11px] text-slate-500 mt-0.5">
-              Paste your own free or paid Google Gemini API key if you want unlimited personal requests.
-            </p>
-          </div>
-
-          <h4 className="text-xs font-bold text-indigo-400 uppercase tracking-wider flex items-center space-x-1.5 pt-2">
-            <Sparkles className="w-3.5 h-3.5" />
-            <span>Translation Rules & Nuances</span>
+            <Sliders className="w-3.5 h-3.5" />
+            <span>Translation Rules &amp; Nuances</span>
           </h4>
 
           {/* Honorifics Style */}
@@ -97,7 +67,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             <label className="text-xs font-semibold text-slate-200">Japanese Honorifics (-san, -chan, -senpai)</label>
             <div className="grid grid-cols-2 gap-2 pt-1">
               <button
-                onClick={() => onUpdateSettings({ ...settings, honorificsStyle: 'keep' })}
+                onClick={() => update({ honorificsStyle: 'keep' })}
                 className={`px-3 py-2 rounded-lg text-xs font-medium border transition-all ${
                   settings.honorificsStyle === 'keep'
                     ? 'bg-indigo-600 text-white border-indigo-400 shadow'
@@ -106,9 +76,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               >
                 Keep (-san, -chan, -senpai)
               </button>
-
               <button
-                onClick={() => onUpdateSettings({ ...settings, honorificsStyle: 'localize' })}
+                onClick={() => update({ honorificsStyle: 'localize' })}
                 className={`px-3 py-2 rounded-lg text-xs font-medium border transition-all ${
                   settings.honorificsStyle === 'localize'
                     ? 'bg-indigo-600 text-white border-indigo-400 shadow'
@@ -118,24 +87,27 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 Localize (Mr, Ms, Bro)
               </button>
             </div>
+            <p className="text-[11px] text-slate-500 mt-1">
+              Honorific handling is applied as a post-processing rule on dictionary-translated text.
+            </p>
           </div>
 
           {/* Sound Effects (SFX) Translation */}
           <div className="flex items-center justify-between bg-black/50 p-3 rounded-lg border border-white/10">
             <div>
-              <p className="text-xs font-semibold text-slate-200">Detect & Translate Sound Effects (SFX)</p>
+              <p className="text-xs font-semibold text-slate-200">Detect &amp; Translate Sound Effects (SFX)</p>
               <p className="text-[11px] text-slate-500">Includes visual sound effect translations (e.g. THUMP, DASH)</p>
             </div>
             <input
               type="checkbox"
               checked={settings.translateSFX}
-              onChange={(e) => onUpdateSettings({ ...settings, translateSFX: e.target.checked })}
+              onChange={(e) => update({ translateSFX: e.target.checked })}
               className="w-4 h-4 accent-indigo-500 rounded cursor-pointer"
             />
           </div>
         </div>
 
-        {/* Typesetting & Font Overlay Settings */}
+        {/* ── Typesetting & Font Overlay Settings ── */}
         <div className="space-y-4 pt-2">
           <h4 className="text-xs font-bold text-indigo-400 uppercase tracking-wider flex items-center space-x-1.5">
             <Sliders className="w-3.5 h-3.5" />
@@ -147,9 +119,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             <label className="text-xs font-semibold text-slate-200">Default Font Style</label>
             <select
               value={settings.defaultFontFamily}
-              onChange={(e) =>
-                onUpdateSettings({ ...settings, defaultFontFamily: e.target.value as FontFamily })
-              }
+              onChange={(e) => update({ defaultFontFamily: e.target.value as FontFamily })}
               className="w-full bg-black/50 border border-white/10 rounded-lg p-2 text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
             >
               <option value="wildwords">Wild Words Manga Style (Comic Sans/Bangers)</option>
@@ -171,9 +141,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               max="1.5"
               step="0.05"
               value={settings.fontSizeScale}
-              onChange={(e) =>
-                onUpdateSettings({ ...settings, fontSizeScale: parseFloat(e.target.value) })
-              }
+              onChange={(e) => update({ fontSizeScale: parseFloat(e.target.value) })}
               className="w-full accent-indigo-500"
             />
           </div>
@@ -187,7 +155,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             <input
               type="checkbox"
               checked={settings.enableStroke}
-              onChange={(e) => onUpdateSettings({ ...settings, enableStroke: e.target.checked })}
+              onChange={(e) => update({ enableStroke: e.target.checked })}
               className="w-4 h-4 accent-indigo-500 rounded cursor-pointer"
             />
           </div>
@@ -199,7 +167,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             onClick={onClose}
             className="w-full py-3 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs uppercase tracking-wider shadow-lg shadow-indigo-950/40 transition-all border border-indigo-400/30"
           >
-            Save & Apply Settings
+            Save &amp; Apply Settings
           </button>
         </div>
 

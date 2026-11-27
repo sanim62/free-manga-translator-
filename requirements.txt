@@ -1,0 +1,4 @@
+manga-ocr
+opencv-python
+pillow
+numpy

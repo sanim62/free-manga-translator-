@@ -29,7 +29,7 @@ export const UploadZone: React.FC<UploadZoneProps> = ({
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+    if (!isProcessing && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       onFilesSelected(e.dataTransfer.files);
     }
   };
@@ -38,6 +38,8 @@ export const UploadZone: React.FC<UploadZoneProps> = ({
     if (e.target.files && e.target.files.length > 0) {
       onFilesSelected(e.target.files);
     }
+    // Let users select the same chapter again after clearing or retrying it.
+    e.target.value = '';
   };
 
   return (
@@ -47,14 +49,15 @@ export const UploadZone: React.FC<UploadZoneProps> = ({
         onDragOver={handleDragOver}
         onDrop={handleDrop}
         className="relative group border border-white/5 bg-[#141417] rounded-xl p-6 sm:p-10 text-center transition-all duration-300 shadow-2xl backdrop-blur-sm cursor-pointer"
-        onClick={() => fileInputRef.current?.click()}
+        onClick={() => !isProcessing && fileInputRef.current?.click()}
       >
         <input
           type="file"
           ref={fileInputRef}
           onChange={handleFileChange}
           multiple
-          accept="image/*, .jpg, .jpeg, .jepg, .webp, .png, .gif, .bmp, .avif, .heic, .heif"
+          disabled={isProcessing}
+          accept="image/jpeg,image/png,image/webp,image/gif,image/bmp,image/avif,.jpg,.jpeg,.png,.webp,.gif,.bmp,.avif"
           className="hidden"
         />
 
@@ -75,7 +78,7 @@ export const UploadZone: React.FC<UploadZoneProps> = ({
 
             <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
               <span className="text-[11px] px-2.5 py-1 rounded bg-black/40 text-slate-300 border border-white/10 font-mono">
-                JPG, JPEG, WEBP, PNG, GIF, AVIF (All Formats)
+                JPG, JPEG, WEBP, PNG, GIF, BMP, AVIF
               </span>
               <span className="text-[11px] px-2.5 py-1 rounded bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 font-mono">
                 Batch Unlimited Pages
@@ -85,11 +88,12 @@ export const UploadZone: React.FC<UploadZoneProps> = ({
             <div className="flex items-center justify-center space-x-3 pt-4 pointer-events-auto">
               <button
                 type="button"
+                disabled={isProcessing}
                 onClick={(e) => {
                   e.stopPropagation();
                   fileInputRef.current?.click();
                 }}
-                className="px-5 py-2.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs sm:text-sm shadow-lg shadow-indigo-900/30 transition-all flex items-center space-x-2 border border-indigo-400/40"
+                className="px-5 py-2.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs sm:text-sm shadow-lg shadow-indigo-900/30 transition-all flex items-center space-x-2 border border-indigo-400/40 disabled:opacity-50"
               >
                 <FolderPlus className="w-4 h-4" />
                 <span>Select Images</span>

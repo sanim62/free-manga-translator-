@@ -13,10 +13,13 @@ export type FontFamily = 'wildwords' | 'sans' | 'serif' | 'comic' | 'monospaced'
 export interface TextBlock {
   id: string;
   box_2d: [number, number, number, number]; // [ymin, xmin, ymax, xmax] normalized 0-1000
+  /** Optional detected bubble interior polygon as normalized [x, y] points. */
+  bubble_polygon?: [number, number][];
   type: TextBlockType;
   reading_order: number;
   ja_text: string;
   en_text: string;
+  translation_complete?: boolean;
   notes?: string;
   bubble_color: BubbleColor;
   text_align: TextAlign;
@@ -45,6 +48,8 @@ export interface MangaPage {
   processedAt?: string;
 }
 
+
+
 export interface TranslationSettings {
   honorificsStyle: 'keep' | 'localize'; // keep (-san, -chan) vs localize (Mr., etc.)
   translateSFX: boolean;
@@ -57,8 +62,6 @@ export interface TranslationSettings {
   enableStroke: boolean;
   bgEraseStyle: 'smooth_fill' | 'rect_fill' | 'none';
   readingDirection: 'rtl' | 'ltr';
-  customApiKey?: string;
-  selectedModel?: string;
 }
 
 export interface MasterIndexData {

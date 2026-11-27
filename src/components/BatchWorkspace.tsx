@@ -10,9 +10,12 @@ import {
   Zap,
   Sparkles,
   Layers,
-  ArrowRight
+  ArrowRight,
+  Download
 } from 'lucide-react';
 import { MangaPage } from '../types';
+import { downloadDataUrl, safeFileStem } from '../utils/downloads';
+import { isFullyTranslatedBlock } from '../utils/translationStatus';
 
 interface BatchWorkspaceProps {
   pages: MangaPage[];
@@ -40,6 +43,7 @@ export const BatchWorkspace: React.FC<BatchWorkspaceProps> = ({
   const totalCount = pages.length;
   const progressPercentage = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
   const totalBlocks = pages.reduce((acc, p) => acc + (p.textBlocks?.length || 0), 0);
+  const fullyTranslatedBlocks = pages.reduce((acc, page) => acc + (page.textBlocks || []).filter(isFullyTranslatedBlock).length, 0);
 
   return (
     <div className="space-y-6">
@@ -95,7 +99,7 @@ export const BatchWorkspace: React.FC<BatchWorkspaceProps> = ({
           </div>
           <div className="flex items-center justify-between text-[11px] text-slate-400 font-mono">
             <span>Progress: {completedCount} / {totalCount} pages</span>
-            <span>Total Translated Speech Bubbles: {totalBlocks}</span>
+            <span>Fully translated: {fullyTranslatedBlocks} / {totalBlocks} bubbles</span>
           </div>
         </div>
 
@@ -116,6 +120,8 @@ export const BatchWorkspace: React.FC<BatchWorkspaceProps> = ({
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
         {pages.map((page, index) => {
           const isSelected = activePageIndex === index;
+          const translatedOnPage = page.textBlocks.filter(isFullyTranslatedBlock).length;
+          const allTranslated = page.textBlocks.length > 0 && translatedOnPage === page.textBlocks.length;
 
           return (
             <div
@@ -149,9 +155,13 @@ export const BatchWorkspace: React.FC<BatchWorkspaceProps> = ({
                     </span>
                   )}
                   {page.status === 'done' && (
-                    <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px] font-semibold flex items-center space-x-1">
-                      <CheckCircle2 className="w-3 h-3" />
-                      <span>{page.textBlocks.length} Bubbles</span>
+                    <span className={`px-2 py-0.5 rounded border text-[10px] font-semibold flex items-center space-x-1 ${
+                      allTranslated
+                        ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                        : 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                    }`}>
+                      {allTranslated ? <CheckCircle2 className="w-3 h-3" /> : <AlertTriangle className="w-3 h-3" />}
+                      <span>{translatedOnPage}/{page.textBlocks.length} translated</span>
                     </span>
                   )}
                   {page.status === 'error' && (
@@ -201,17 +211,33 @@ export const BatchWorkspace: React.FC<BatchWorkspaceProps> = ({
                   )}
 
                   {page.status === 'done' && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onOpenEditor(index);
-                      }}
-                      className="p-1.5 rounded bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 transition-all flex items-center space-x-1"
-                      title="Interactive Text & Typesetting Editor"
-                    >
-                      <Edit3 className="w-3.5 h-3.5" />
-                      <span className="text-[10px] font-semibold">Edit</span>
-                    </button>
+                    <>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (!page.translatedImageUrl) return;
+                          const sequence = String(page.sequenceIndex || index + 1).padStart(3, '0');
+                          downloadDataUrl(page.translatedImageUrl, `translated_${sequence}_${safeFileStem(page.filename)}.jpg`);
+                        }}
+                        disabled={!page.translatedImageUrl}
+                        className="p-1.5 rounded bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 transition-all disabled:opacity-40"
+                        title="Download translated image"
+                        aria-label={`Download translated image for ${page.filename}`}
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onOpenEditor(index);
+                        }}
+                        className="p-1.5 rounded bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 transition-all flex items-center space-x-1"
+                        title="Interactive Text & Typesetting Editor"
+                      >
+                        <Edit3 className="w-3.5 h-3.5" />
+                        <span className="text-[10px] font-semibold">Edit</span>
+                      </button>
+                    </>
                   )}
                 </div>
               </div>

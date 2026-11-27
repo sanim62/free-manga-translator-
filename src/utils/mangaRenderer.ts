@@ -132,7 +132,6 @@ function renderSingleBlock(
   const h = Math.max(((ymax - ymin) / 1000) * imgHeight, 20);
 
   const text = block.en_text ? block.en_text.trim() : '';
-  if (!text) return;
 
   // 1. Erase / Fill background inside speech bubble
   if (settings.bgEraseStyle !== 'none') {
@@ -145,24 +144,9 @@ function renderSingleBlock(
       ctx.fillStyle = fillColor;
 
       if (block.type === 'speech_bubble' || block.type === 'thought_bubble') {
-        // Draw smoothed bubble mask slightly inset
-        const insetX = Math.min(w * 0.08, 12);
-        const insetY = Math.min(h * 0.08, 12);
-        const bx = x + insetX;
-        const by = y + insetY;
-        const bw = w - insetX * 2;
-        const bh = h - insetY * 2;
-
-        ctx.beginPath();
-        ctx.ellipse(
-          bx + bw / 2,
-          by + bh / 2,
-          Math.max(bw / 2, 5),
-          Math.max(bh / 2, 5),
-          0,
-          0,
-          2 * Math.PI
-        );
+        // Fill the detected bubble interior contour instead of approximating
+        // every bubble with an ellipse that can spill onto nearby artwork.
+        traceBubblePath(ctx, block, imgWidth, imgHeight, x, y, w, h);
         ctx.fill();
       } else {
         // Rounded rect for narration / caption / sfx
@@ -175,8 +159,16 @@ function renderSingleBlock(
     ctx.restore();
   }
 
+  // Even when no dictionary entry exists, erase the source lettering inside
+  // the detected balloon so untranslated Japanese is never presented as English.
+  if (!text) return;
+
   // 2. Typeset text
   ctx.save();
+  if (hasBubblePolygon(block)) {
+    traceBubblePath(ctx, block, imgWidth, imgHeight, x, y, w, h);
+    ctx.clip();
+  }
 
   // Font family resolution
   const familyKey = block.customFontFamily || settings.defaultFontFamily;
@@ -217,12 +209,20 @@ function renderSingleBlock(
     attempts++;
   }
 
+  // Keep every glyph inside its bubble. Long unbroken strings are split by
+  // wrapText; if there are still too many lines, shorten the last visible line.
+  const lineStep = fontSize * 1.15;
+  const visibleLineCount = Math.max(1, Math.floor(maxTextHeight / lineStep));
+  if (lines.length > visibleLineCount) {
+    lines = lines.slice(0, visibleLineCount);
+    lines[lines.length - 1] = fitWithEllipsis(ctx, lines[lines.length - 1], maxTextWidth);
+  }
+
   // Draw lines
   ctx.fillStyle = textColor;
   ctx.textAlign = block.text_align === 'left' ? 'left' : block.text_align === 'right' ? 'right' : 'center';
   ctx.textBaseline = 'middle';
 
-  const lineStep = fontSize * 1.15;
   const startY = y + h / 2 - (lines.length - 1) * (lineStep / 2);
 
   lines.forEach((line, idx) => {
@@ -235,13 +235,44 @@ function renderSingleBlock(
     if (settings.enableStroke || block.bubble_color === 'transparent') {
       ctx.strokeStyle = block.bubble_color === 'black' ? '#000000' : settings.strokeColor;
       ctx.lineWidth = Math.max(fontSize * 0.15, 2);
-      ctx.strokeText(line, lineX, lineY);
+      ctx.strokeText(line, lineX, lineY, maxTextWidth);
     }
 
-    ctx.fillText(line, lineX, lineY);
+    ctx.fillText(line, lineX, lineY, maxTextWidth);
   });
 
   ctx.restore();
+}
+
+function hasBubblePolygon(block: TextBlock): boolean {
+  return Array.isArray(block.bubble_polygon) && block.bubble_polygon.length >= 3;
+}
+
+function traceBubblePath(
+  ctx: CanvasRenderingContext2D,
+  block: TextBlock,
+  imgWidth: number,
+  imgHeight: number,
+  x: number,
+  y: number,
+  w: number,
+  h: number
+): void {
+  if (!hasBubblePolygon(block)) {
+    const insetX = Math.min(w * 0.08, 12);
+    const insetY = Math.min(h * 0.08, 12);
+    ctx.beginPath();
+    ctx.ellipse(x + w / 2, y + h / 2, Math.max((w - insetX * 2) / 2, 5), Math.max((h - insetY * 2) / 2, 5), 0, 0, 2 * Math.PI);
+    return;
+  }
+
+  const points = block.bubble_polygon!;
+  ctx.beginPath();
+  ctx.moveTo((points[0][0] / 1000) * imgWidth, (points[0][1] / 1000) * imgHeight);
+  for (let i = 1; i < points.length; i++) {
+    ctx.lineTo((points[i][0] / 1000) * imgWidth, (points[i][1] / 1000) * imgHeight);
+  }
+  ctx.closePath();
 }
 
 function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
@@ -254,7 +285,19 @@ function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number)
     const testLine = currentLine ? `${currentLine} ${word}` : word;
     const metrics = ctx.measureText(testLine);
 
-    if (metrics.width > maxWidth && currentLine) {
+    if (ctx.measureText(word).width > maxWidth) {
+      if (currentLine) lines.push(currentLine);
+      // Break a single oversized word by Unicode code point so it cannot spill
+      // beyond the bubble even when it contains no spaces.
+      let fragment = '';
+      for (const char of Array.from(word)) {
+        if (fragment && ctx.measureText(fragment + char).width > maxWidth) {
+          lines.push(fragment);
+          fragment = char;
+        } else fragment += char;
+      }
+      currentLine = fragment;
+    } else if (metrics.width > maxWidth && currentLine) {
       lines.push(currentLine);
       currentLine = word;
     } else {
@@ -265,4 +308,11 @@ function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number)
     lines.push(currentLine);
   }
   return lines.length > 0 ? lines : [text];
+}
+
+function fitWithEllipsis(ctx: CanvasRenderingContext2D, line: string, maxWidth: number): string {
+  const suffix = '…';
+  let chars = Array.from(line);
+  while (chars.length && ctx.measureText(chars.join('') + suffix).width > maxWidth) chars.pop();
+  return chars.join('') + suffix;
 }
